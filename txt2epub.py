@@ -1,5 +1,6 @@
 import enum
 import html
+from pathlib import Path
 
 from charset_normalizer import from_path
 from ebooklib import epub
@@ -39,33 +40,30 @@ class FileParser:
 
 
 class BookChapter:
-    def __init__(self, title: str, cid: int):
+    def __init__(self, title: str):
         self.title = title
         self.content = ''
-        self._cid = cid
 
     def append_html(self, tag: str, content: str):
         escaped = html.escape(content)
         self.content += f'<{tag}>{escaped}</{tag}>\n'
 
     def export(self) -> epub.EpubHtml:
-        return epub.EpubHtml(
-            file_name=f'section{self._cid:04}.xhtml',
-            title=self.title, content=self.content)
+        return epub.EpubHtml(title=self.title, content=self.content)
 
 
 class BookSection:
     EpubSection = tuple[epub.Section, list[epub.EpubHtml]]
 
     def __init__(self, file_name: str):
-        self.title = file_name
+        self.title = Path(file_name).stem
         self.authors: list[str] = []
+        self._file = file_name
         self._chapters: list[BookChapter] = []
         self._parse_file()
 
     def _add_chapter(self, title: str):
-        cid = len(self._chapters) + 1
-        chapter = BookChapter(title, cid)
+        chapter = BookChapter(title)
         chapter.append_html('h1', title)
         self._chapters.append(chapter)
 
@@ -85,7 +83,7 @@ class BookSection:
             current.append_html('p', content)
 
     def _parse_file(self):
-        parser = FileParser(self.title)
+        parser = FileParser(self._file)
         results = parser.parse()
         for token, content in results:
             self._add_line(token, content)
@@ -111,19 +109,20 @@ class Book:
         self.authors = [author for sec in self._sections
                         for author in sec.authors]
 
-    def export(self, flatten: bool = True) -> epub.EpubBook:
+    def export(self) -> epub.EpubBook:
         book = epub.EpubBook()
         book.set_title(self.title)
         for author in self.authors:
             book.add_author(author)
         book.toc = [sec.export() for sec in self._sections]
         book.spine = ['nav']
+        cid = 0
         for _, htmls in book.toc:
             for html in htmls:
+                html.file_name = f'section_{cid:04}.xhtml'
+                cid += 1
                 book.spine.append(html)  # type: ignore
                 book.add_item(html)
-        if flatten and len(self._files) == 1:
-            book.toc = book.spine[1:]
         book.add_item(epub.EpubNcx())
         book.add_item(epub.EpubNav())
         return book

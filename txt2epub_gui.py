@@ -4,9 +4,10 @@ import sys
 from pathlib import Path
 
 from PySide6.QtGui import QIcon, Qt
-from PySide6.QtWidgets import (QApplication, QFileDialog, QFormLayout,
-                               QHBoxLayout, QLineEdit, QListWidget,
-                               QMessageBox, QPushButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog,
+                               QFormLayout, QHBoxLayout, QLineEdit,
+                               QListWidget, QMessageBox, QPushButton,
+                               QVBoxLayout, QWidget)
 
 import txt2epub
 
