@@ -3,19 +3,35 @@
 import sys
 from pathlib import Path
 
+from PySide6.QtCore import QStringListModel, QThread
 from PySide6.QtGui import QIcon, Qt
-from PySide6.QtWidgets import (QApplication, QCheckBox, QFileDialog,
-                               QFormLayout, QHBoxLayout, QLineEdit,
-                               QListWidget, QMessageBox, QPushButton,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QFileDialog, QFormLayout,
+                               QHBoxLayout, QLineEdit, QListView, QMessageBox,
+                               QPushButton, QVBoxLayout, QWidget)
 
 import txt2epub
+
+
+class BookLoader(QThread):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.result: txt2epub.Book | None = None
+        self._files = []
+
+    def start(self, files: list[str]):
+        self._files = files
+        super().start()
+
+    def run(self):
+        self.result = txt2epub.Book(self._files)
 
 
 class MainWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._book = txt2epub.Book()
+        self._model = QStringListModel(self)
+        self._loader = BookLoader(self)
         self._setupUi()
         self._setupSignals()
 
@@ -26,7 +42,8 @@ class MainWindow(QWidget):
         self._openIcon = QIcon.fromTheme(QIcon.ThemeIcon.DocumentOpen)
 
         self._inputLayout = QHBoxLayout()
-        self._inputList = QListWidget(self)
+        self._inputList = QListView(self)
+        self._inputList.setModel(self._model)
 
         self._inputButtonLayout = QVBoxLayout()
         self._inputButtonLayout.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -62,11 +79,17 @@ class MainWindow(QWidget):
         self._layout.addWidget(self._generateButton)
 
     def _loadFiles(self, files: list[str]):
-        self._book.load(files)
-        outputName = ''
+        self.setDisabled(True)
+        self._loader.finished.connect(lambda: self._loadFilesFinished(files))
+        self._loader.start(files)
+
+    def _loadFilesFinished(self, files: list[str]):
+        self._model.setStringList(files)
+        self.setDisabled(False)
+        self._outputField.clear()
         if files:
             outputName = str(Path(files[0]).with_suffix(".epub"))
-        self._outputField.setText(outputName)
+            self._outputField.setText(outputName)
         self._titleField.setText(self._book.title)
         self._authorField.setText(','.join(self._book.authors))
 
@@ -74,17 +97,12 @@ class MainWindow(QWidget):
         caption = self.tr("Select Input Text File")
         filter = self.tr("Plain Text (*.txt);; All Files (*.*)")
         files, _ = QFileDialog.getOpenFileNames(self, caption, filter=filter)
-        if files:
-            self._inputList.addItems(files)
-            self._loadFiles(files)
+        self._loadFiles(files)
 
     def _removeSelectedFiles(self):
+        files = self._model.stringList()
         for index in self._inputList.selectedIndexes():
-            item = self._inputList.takeItem(index.row())
-            del item
-        self._inputList.clearSelection()
-        files = [self._inputList.item(i).text()
-                 for i in range(self._inputList.count())]
+            files.pop(index.row())
         self._loadFiles(files)
 
     def _selectOutputFile(self):
@@ -117,6 +135,7 @@ class MainWindow(QWidget):
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
+    app.setApplicationName("txt2epub")
     win = MainWindow()
     win.show()
     sys.exit(app.exec())
