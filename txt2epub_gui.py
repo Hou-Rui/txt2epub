@@ -1,9 +1,12 @@
 #!/usr/bin/env python
 
+import asyncio
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from PySide6.QtCore import QStringListModel, QThread
+import PySide6.QtAsyncio as QtAsyncio
+from PySide6.QtCore import QStringListModel
 from PySide6.QtGui import QIcon, Qt
 from PySide6.QtWidgets import (QApplication, QFileDialog, QFormLayout,
                                QHBoxLayout, QLineEdit, QListView, QMessageBox,
@@ -12,26 +15,11 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QFormLayout,
 import txt2epub
 
 
-class BookLoader(QThread):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.result: txt2epub.Book | None = None
-        self._files = []
-
-    def start(self, files: list[str]):
-        self._files = files
-        super().start()
-
-    def run(self):
-        self.result = txt2epub.Book(self._files)
-
-
 class MainWindow(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._book = txt2epub.Book()
         self._model = QStringListModel(self)
-        self._loader = BookLoader(self)
         self._setupUi()
         self._setupSignals()
 
@@ -78,12 +66,11 @@ class MainWindow(QWidget):
         self._layout.addLayout(self._form)
         self._layout.addWidget(self._generateButton)
 
-    def _loadFiles(self, files: list[str]):
+    async def _loadFiles(self, files: list[str]):
         self.setDisabled(True)
-        self._loader.finished.connect(lambda: self._loadFilesFinished(files))
-        self._loader.start(files)
-
-    def _loadFilesFinished(self, files: list[str]):
+        with ThreadPoolExecutor() as pool:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(pool, lambda: self._book.load(files))
         self._model.setStringList(files)
         self.setDisabled(False)
         self._outputField.clear()
@@ -97,13 +84,13 @@ class MainWindow(QWidget):
         caption = self.tr("Select Input Text File")
         filter = self.tr("Plain Text (*.txt);; All Files (*.*)")
         files, _ = QFileDialog.getOpenFileNames(self, caption, filter=filter)
-        self._loadFiles(files)
+        asyncio.ensure_future(self._loadFiles(files))
 
     def _removeSelectedFiles(self):
         files = self._model.stringList()
         for index in self._inputList.selectedIndexes():
             files.pop(index.row())
-        self._loadFiles(files)
+        asyncio.ensure_future(self._loadFiles(files))
 
     def _selectOutputFile(self):
         caption = self.tr("Select Output EPUB File")
@@ -138,4 +125,4 @@ if __name__ == '__main__':
     app.setApplicationName("txt2epub")
     win = MainWindow()
     win.show()
-    sys.exit(app.exec())
+    sys.exit(QtAsyncio.run(handle_sigint=True))
