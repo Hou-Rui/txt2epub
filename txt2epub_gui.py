@@ -4,6 +4,7 @@ import asyncio
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Callable
 
 import PySide6.QtAsyncio as QtAsyncio
 from PySide6.QtCore import QStringListModel
@@ -66,11 +67,14 @@ class MainWindow(QWidget):
         self._layout.addLayout(self._form)
         self._layout.addWidget(self._generateButton)
 
-    async def _loadFiles(self, files: list[str]):
-        self.setDisabled(True)
+    async def _runAsync(self, func: Callable[[], None]):
         with ThreadPoolExecutor() as pool:
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(pool, lambda: self._book.load(files))
+            await loop.run_in_executor(pool, func)
+
+    async def _loadFilesAsync(self, files: list[str]):
+        self.setDisabled(True)
+        await self._runAsync(lambda: self._book.load(files))
         self._model.setStringList(files)
         self.setDisabled(False)
         self._outputField.clear()
@@ -84,13 +88,13 @@ class MainWindow(QWidget):
         caption = self.tr("Select Input Text File")
         filter = self.tr("Plain Text (*.txt);; All Files (*.*)")
         files, _ = QFileDialog.getOpenFileNames(self, caption, filter=filter)
-        asyncio.ensure_future(self._loadFiles(files))
+        asyncio.ensure_future(self._loadFilesAsync(files))
 
     def _removeSelectedFiles(self):
         files = self._model.stringList()
         for index in self._inputList.selectedIndexes():
             files.pop(index.row())
-        asyncio.ensure_future(self._loadFiles(files))
+        asyncio.ensure_future(self._loadFilesAsync(files))
 
     def _selectOutputFile(self):
         caption = self.tr("Select Output EPUB File")
@@ -98,20 +102,27 @@ class MainWindow(QWidget):
         fileName, _ = QFileDialog.getSaveFileName(self, caption, filter=filter)
         self._outputField.setText(fileName)
 
+    async def _writeBookAsync(self, output: str):
+        try:
+            self.setDisabled(True)
+            await self._runAsync(lambda: self._book.write(output))
+            message = self.tr("Epub file generated.")
+            ok = QMessageBox.StandardButton.Ok
+            QMessageBox.information(self, self.tr("Finished"), message, ok)
+        except Exception as e:
+            QMessageBox.critical(self, self.tr("Error"), str(e))
+        finally:
+            self.setDisabled(False)
+
     def _generateEpub(self):
         self._book.title = self._titleField.text()
         self._book.authors = self._authorField.text().split(',')
-        button = QMessageBox.StandardButton.Ok
         if not self._book.title:
             message = self.tr("Book title cannot be empty.")
-            QMessageBox.critical(self, self.tr("Error"), message, button)
+            QMessageBox.critical(self, self.tr("Error"), message)
             return
-        try:
-            self._book.write(self._outputField.text())
-            message = self.tr("Epub file generated.")
-            QMessageBox.information(self, self.tr("Finished"), message, button)
-        except Exception as e:
-            QMessageBox.critical(self, self.tr("Error"), str(e), button)
+        output = self._outputField.text()
+        asyncio.ensure_future(self._writeBookAsync(output))
 
     def _setupSignals(self):
         self._inputAddButton.clicked.connect(self._selectInputFiles)
