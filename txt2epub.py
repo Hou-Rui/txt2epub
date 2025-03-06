@@ -28,6 +28,7 @@ class FileParser:
         return 'UTF-8'
 
     def _parse_line(self, line: str) -> ParserResult:
+        line = line.rstrip()
         for token in MetaToken:
             if line.startswith(token.value):
                 content = line.removeprefix(token.value).strip()
@@ -68,6 +69,8 @@ class BookSection:
         self._chapters.append(chapter)
 
     def _add_line(self, token: MetaToken, content: str):
+        if not content or content.isspace():
+            return
         if not self._chapters:
             self._add_chapter(self.title)
         current = self._chapters[-1]
@@ -129,4 +132,4 @@ class Book:
 
     def write(self, file_name: str):
         book = self.export()
-        epub.write_epub(file_name, book)
+        epub.write_epub(file_name, book, {'epub3_pages': False})
