@@ -67,14 +67,14 @@ class MainWindow(QWidget):
         self._layout.addLayout(self._form)
         self._layout.addWidget(self._generateButton)
 
-    async def _runAsync(self, func: Callable[[], None]):
+    async def _runAsync(self, func: Callable, *args):
         with ThreadPoolExecutor() as pool:
             loop = asyncio.get_running_loop()
-            await loop.run_in_executor(pool, func)
+            return await loop.run_in_executor(pool, lambda: func(*args))
 
     async def _loadFilesAsync(self, files: list[str]):
         self.setDisabled(True)
-        await self._runAsync(lambda: self._book.load(files))
+        await self._runAsync(self._book.load, files)
         self._model.setStringList(files)
         self.setDisabled(False)
         self._outputField.clear()
@@ -105,7 +105,7 @@ class MainWindow(QWidget):
     async def _writeBookAsync(self, output: str):
         try:
             self.setDisabled(True)
-            await self._runAsync(lambda: self._book.write(output))
+            await self._runAsync(self._book.write, output)
             message = self.tr("Epub file generated.")
             ok = QMessageBox.StandardButton.Ok
             QMessageBox.information(self, self.tr("Finished"), message, ok)
